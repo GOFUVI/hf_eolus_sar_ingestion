@@ -1,0 +1,8 @@
+FROM python:3.11-slim
+
+RUN pip install --no-cache-dir pyarrow shapely "pystac[validation]"
+
+WORKDIR /app
+COPY build_sar_catalog.py parquet_stac_utils.py /app/
+
+ENTRYPOINT ["python", "/app/build_sar_catalog.py"]
