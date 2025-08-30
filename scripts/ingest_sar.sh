@@ -238,7 +238,7 @@ for item_file in "${output_dir}/items"/*.json; do
     lineage_text="Derived from Sentinel-1 Level-2 OCN OWI products ${lineage_ids} using ingest_sar.sh (https://doi.org/10.5281/zenodo.17007305)"
   else
     log_warn "No source ZIP files matched for item ${item_id}"
-    lineage_text="Derived using ingest_sar.sh (https://doi.org/10.5281/zenodo.17007305)"
+    lineage_text="Derived using ingest_sar.sh (https://doi.org/10.5281/zenodo.)"
   fi
   jq --arg lineage "$lineage_text" \
     '.stac_extensions |= (. + ["https://stac-extensions.github.io/processing/v1.1.0/schema.json"] | unique) |
