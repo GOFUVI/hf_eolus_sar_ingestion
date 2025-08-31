@@ -102,3 +102,5 @@ The downloads directory will contain ZIP archives for each selected scene, along
 ## Notes
 This document focuses solely on the download pipeline. Subsequent ingestion scripts such as
 `ingest_sar.sh` are out of scope.
+
+Aviso: aunque el script intenta reanudar la descarga cuando detecta algún problema (por ejemplo, cortes de red o fallos temporales), en ocasiones pueden producirse errores desconocidos que no puede gestionar y el proceso puede detenerse. Por ello, no es recomendable ejecutarlo completamente desatendido. Si tras un fallo se vuelve a lanzar el script en el mismo directorio de trabajo/salida, retomará la descarga en el punto donde quedó sin repetir lo ya completado.

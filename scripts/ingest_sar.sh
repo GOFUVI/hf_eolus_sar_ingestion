@@ -195,6 +195,13 @@ if [[ -d "${assets_dir}" ]]; then
   if [[ "${FILE_COUNT}" -eq 0 ]]; then
     log_warn "No Parquet files generated under '${assets_dir}'"
   fi
+  # Debug aid: confirm lineage.json presence after container run
+  if [[ -f "${assets_dir}/lineage.json" ]]; then
+    log_info "Found lineage mapping at ${assets_dir}/lineage.json"
+  else
+    log_warn "Lineage mapping not present at ${assets_dir}/lineage.json immediately after container run"
+    ls -la "${assets_dir}" || true
+  fi
 else
   log_err "Output directory '${assets_dir}' not found after container run"
 fi
@@ -229,22 +236,33 @@ docker run --rm \
 
 # Annotate STAC items with processing lineage
 log_info "Adding processing extension lineage to STAC items"
+lineage_file="${assets_dir}/lineage.json"
+if [[ ! -f "${lineage_file}" ]]; then
+  log_warn "Lineage mapping file ${lineage_file} not found"
+fi
 for item_file in "${output_dir}/items"/*.json; do
   item_id="$(basename "$item_file" .json)"
-  # Build lineage sentence (string) from matching ZIP base names (macOS-compatible, no Bash 4 features)
-  lineage_list=$(find "${data_dir}" -type f -name "*${item_id}*.zip" -exec basename {} .zip \;)
-  if [[ -n "${lineage_list}" ]]; then
-    lineage_ids=$(printf '%s\n' "${lineage_list}" | awk 'NF{if(len){printf(", ");} printf "%s", $0; len+=length($0)}')
+  lineage_ids=""
+  if [[ -f "${lineage_file}" ]]; then
+    lineage_ids=$(jq -r --arg id "${item_id}" '.[$id] | join(", ")' "${lineage_file}")
+  fi
+  if [[ -n "${lineage_ids}" && "${lineage_ids}" != "null" ]]; then
     lineage_text="Derived from Sentinel-1 Level-2 OCN OWI products ${lineage_ids} using ingest_sar.sh (https://doi.org/10.5281/zenodo.17007305)"
   else
-    log_warn "No source ZIP files matched for item ${item_id}"
-    lineage_text="Derived using ingest_sar.sh (https://doi.org/10.5281/zenodo.)"
+    log_warn "No lineage info for item ${item_id}"
+    lineage_text="Derived using ingest_sar.sh (https://doi.org/10.5281/zenodo.17007305)"
   fi
   jq --arg lineage "$lineage_text" \
     '.stac_extensions |= (. + ["https://stac-extensions.github.io/processing/v1.1.0/schema.json"] | unique) |
      .properties["processing:lineage"] = $lineage' \
     "${item_file}" > "${item_file}.tmp" && mv "${item_file}.tmp" "${item_file}"
 done
+if [[ -f "${lineage_file}" ]]; then
+  rm -f "${lineage_file}"
+  log_info "Removed temporary lineage file ${lineage_file}"
+else
+  log_warn "Lineage mapping file ${lineage_file} was not found for cleanup"
+fi
 
 ###############################################
 # Prepare Athena schema and clean temp artifact

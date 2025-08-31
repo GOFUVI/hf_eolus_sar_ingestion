@@ -52,6 +52,64 @@ log_info("R packages: sf=%s, arrow=%s, dplyr=%s",
          as.character(utils::packageVersion("arrow")),
          as.character(utils::packageVersion("dplyr")))
 
+#' Write lineage mapping for GeoParquet outputs
+#'
+#' @description Write a JSON file that maps each observation date to the input
+#'   Sentinel-1 product files contributing to that date's GeoParquet output.
+#'
+#' @param wind_df A data frame containing wind observations with columns
+#'   `date` and `Name`.
+#' @param output_dir Directory where the lineage JSON file will be written.
+#'
+#' @details The function groups records in `wind_df` by `date` and collects the
+#'   unique `Name` values. The mapping is saved as `lineage.json` inside
+#'   `output_dir` with dates as keys and arrays of file names as values.
+#'
+#' @return Invisibly returns the path to the created JSON file.
+#'
+#' @examples
+#' df <- data.frame(date = c("2020-01-01", "2020-01-01", "2020-01-02"),
+#'                  Name = c("A.zip", "B.zip", "C.zip"))
+#' tmp <- tempdir()
+#' write_lineage_map(df, tmp)
+#' file.exists(file.path(tmp, "lineage.json"))
+write_lineage_map <- function(wind_df, output_dir, zip_files = NULL) {
+  lineage_path <- file.path(output_dir, "lineage.json")
+
+  build_from_wind <- !is.null(wind_df) && all(c("date", "Name") %in% names(wind_df))
+  if (build_from_wind) {
+    lineage_df <- wind_df %>%
+      dplyr::group_by(date) %>%
+      dplyr::summarise(files = list(unique(Name)), .groups = "drop")
+    lineage_list <- setNames(lineage_df$files, lineage_df$date)
+    jsonlite::write_json(lineage_list, lineage_path, auto_unbox = TRUE)
+    log_info("Lineage mapping written (from wind_data) to %s", lineage_path)
+    return(invisible(lineage_path))
+  }
+
+  # Fallback: derive lineage by parsing dates from ZIP filenames
+  if (!is.null(zip_files) && length(zip_files) > 0) {
+    bn <- basename(zip_files)
+    # Extract first 8-digit date (YYYYMMDD) token from filename
+    d_raw <- stringr::str_extract(bn, "(?<!\\d)\\d{8}(?!\\d)")
+    # Convert to YYYY-MM-DD; suppress warnings for unparsable entries
+    suppressWarnings({ dates <- as.Date(d_raw, format = "%Y%m%d") })
+    keep <- !is.na(dates)
+    if (!any(keep)) {
+      log_warn("Cannot write lineage map; no parseable YYYYMMDD dates found in ZIP filenames")
+      return(invisible(NULL))
+    }
+    df <- data.frame(date = format(dates[keep], "%Y-%m-%d"), file = bn[keep], stringsAsFactors = FALSE)
+    lineage_list <- split(df$file, df$date)
+    jsonlite::write_json(lineage_list, lineage_path, auto_unbox = TRUE)
+    log_info("Lineage mapping written (from ZIP filenames) to %s", lineage_path)
+    return(invisible(lineage_path))
+  }
+
+  log_warn("Cannot write lineage map; columns 'date'/'Name' missing and no ZIP list provided")
+  invisible(NULL)
+}
+
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 0) {
   stop("Usage: Rscript upload_SAR.R", call. = FALSE)
@@ -115,10 +173,9 @@ df_py <- r_to_py(wind_data)
 tbl <- pa$Table$from_pandas(df_py, preserve_index = FALSE)
 log_info("PyArrow table schema fields: %s", paste(py_to_r(tbl$schema$names), collapse = ", "))
 
-# Construct GeoParquet metadata matching other ingestion scripts
 log_info("Building CRS84 + GeoParquet metadata objects...")
+# Build CRS84 PROJJSON safely without backtick names in list() calls
 CRS84 <- list(
-  `$schema` = "https://proj.org/schemas/v0.5/projjson.schema.json",
   type = "GeographicCRS",
   name = "WGS 84 longitude-latitude",
   datum = list(
@@ -139,6 +196,7 @@ CRS84 <- list(
   ),
   id = list(authority = "OGC", code = "CRS84")
 )
+CRS84[["$schema"]] <- "https://proj.org/schemas/v0.5/projjson.schema.json"
 
 geo_meta <- list(
   version = "1.1.0",
@@ -164,28 +222,20 @@ geo_bytes <- geo_json$encode("utf-8")
 log_info("Preparing schema metadata dictionary (copy existing, if any)...")
 schema_meta <- py_eval("dict()", convert = FALSE)
 curr_meta <- tbl$schema$metadata
-log_debug("Current schema metadata proxy class: %s", paste(class(curr_meta), collapse = ","))
 try({ reticulate::py_call(schema_meta$update, list(curr_meta)) }, silent = TRUE)
 
 log_info("Setting 'geo' entry in schema metadata via py_set_item()...")
 key_geo <- py_eval("b'geo'", convert = FALSE)
 reticulate::py_set_item(schema_meta, key_geo, geo_bytes)
-log_info("Inspecting Arrow Schema and with_metadata...")
-log_debug("Schema class: %s", paste(class(tbl$schema), collapse = ", "))
-log_debug("Has with_metadata: %s", as.character(reticulate::py_has_attr(tbl$schema, "with_metadata")))
-log_debug("with_metadata attr class: %s", paste(class(tbl$schema$with_metadata), collapse = ", "))
 
 log_info("Creating schema with metadata via a tiny Python helper...")
 reticulate::py_run_string("\nimport pyarrow as pa\n\ndef _schema_with_meta(schema, md):\n    return schema.with_metadata(md)\n")
-schema_with_geo <- tryCatch({
+schema_to_use <- tryCatch({
   reticulate::py$`_schema_with_meta`(tbl$schema, schema_meta)
 }, error = function(e) {
-  log_warn("Failed to create schema with existing metadata (will retry with only 'geo'): %s", e$message)
-  md_min <- py_eval("dict()", convert = FALSE)
-  reticulate::py_set_item(md_min, key_geo, geo_bytes)
-  reticulate::py$`_schema_with_meta`(tbl$schema, md_min)
+  log_warn("Failed to attach GeoParquet metadata; falling back to original schema: %s", e$message)
+  tbl$schema
 })
-log_debug("schema_with_geo class: %s", paste(class(schema_with_geo), collapse = ", "))
 log_info("Preparing partitioning (hive) for column date...")
 part_schema <- pa$schema(list(
   pa$field("date", pa$string())
@@ -199,7 +249,7 @@ ds$write_dataset(
   format = "parquet",
   partitioning = part,
   basename_template = "data_{i}.parquet",
-  schema = schema_with_geo,
+  schema = schema_to_use,
   existing_data_behavior = "overwrite_or_ignore"
 )
 try({
@@ -221,6 +271,9 @@ try({
     }
   }
 }, silent = TRUE)
+
+# Write lineage mapping after dataset write/rename to avoid accidental clobbering
+write_lineage_map(wind_data, output_dir, zip_files)
 
 # Export Athena column definitions from Parquet dataset schema for DDL
 col_classes <- sapply(wind_data, function(x) class(x)[1])
