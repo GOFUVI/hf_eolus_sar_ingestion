@@ -1,0 +1,24 @@
+# Base image
+FROM rocker/geospatial:latest
+
+# Install Python dependencies and AWS CLI in a virtualenv
+RUN apt-get update \
+    && apt-get install -y python3-pip python3-venv \
+    && python3 -m venv /opt/awscli-venv \
+    && /opt/awscli-venv/bin/pip install --upgrade pip awscli pyarrow pandas geopandas \
+    && ln -s /opt/awscli-venv/bin/aws /usr/local/bin/aws \
+    && rm -rf /var/lib/apt/lists/*
+
+# Ensure the venv python is first for reticulate and AWS CLI is available
+ENV PATH=/opt/awscli-venv/bin:$PATH
+ENV RETICULATE_PYTHON=/opt/awscli-venv/bin/python
+
+# Install required R packages, including S1OCN
+RUN Rscript -e "install.packages(c('magrittr','purrr','dplyr','stringr','sf','arrow','remotes','reticulate'), repos='https://cloud.r-project.org')" \
+    && Rscript -e "remotes::install_github('GOFUVI/S1OCN')"
+
+WORKDIR /app
+COPY upload_SAR.R /app/
+
+# Default entrypoint executes the upload_SAR R script
+ENTRYPOINT ["Rscript", "/app/upload_SAR.R"]
