@@ -247,7 +247,7 @@ for item_file in "${output_dir}/items"/*.json; do
     lineage_ids=$(jq -r --arg id "${item_id}" '.[$id] | join(", ")' "${lineage_file}")
   fi
   if [[ -n "${lineage_ids}" && "${lineage_ids}" != "null" ]]; then
-    lineage_text="Derived from Sentinel-1 Level-2 OCN OWI products ${lineage_ids} using ingest_sar.sh (https://doi.org/10.5281/zenodo.17007305)"
+    lineage_text="Derived from Sentinel-1 Level-2 OCN OWI products ${lineage_ids} using ingest_sar.sh (https://doi.org/10.5281/zenodo.17011789)"
   else
     log_warn "No lineage info for item ${item_id}"
     lineage_text="Derived using ingest_sar.sh (https://doi.org/10.5281/zenodo.17007305)"
