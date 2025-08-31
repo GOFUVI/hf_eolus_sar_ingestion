@@ -84,7 +84,7 @@ Use the `scripts/download_sar.sh` script to fetch Sentinel-1 SAR OCN products (O
       --athena-db my_database --athena-table sar_owi \
       --collection s1-owi \
       --data-dir /tmp/sar_downloads --output-dir /tmp/catalog_output
-    ```[1]
+    ```
 
     In this example, we point the script to an S3 bucket (`s3://my-bucket/sar_data/`) where the output will be stored, and use the AWS CLI `default` profile for authentication[1]. We specify an Athena database (`my_database`) and table name (`sar_owi`) to use for the external table that will be created[1]. The `--collection` argument sets the STAC Collection ID to **"s1-owi"** (short for Sentinel-1 Ocean Wind Imagery, for instance) – you can choose any identifier here, ideally something descriptive and unique for this dataset. We also provide the path to the directory containing the downloaded ZIPs (`--data-dir /tmp/sar_downloads`, which is the output from the previous step) and an output directory for the local results (`--output-dir /tmp/catalog_output`). The output directory is where the Parquet files and STAC JSONs will be written on your local filesystem before upload; by default it’s `scripts/catalog_output/` if not specified[5].
 
@@ -157,6 +157,7 @@ Use the `scripts/download_sar.sh` script to fetch Sentinel-1 SAR OCN products (O
       --boundary-file region.geojson \
       --credentials-file ~/s1ocn_credentials.txt \
       --output-dir /data/sar_raw
+```
 
 This will create `/data/sar_raw/` and populate it with the ZIP files for all Sentinel-1 OCN scenes in January 2024 covering the area in `region.geojson`. It will also produce `files_to_download.csv` and `downloaded_files.txt` in that folder for reference.
 
@@ -164,12 +165,14 @@ This will create `/data/sar_raw/` and populate it with the ZIP files for all Sen
 
 Now we convert the raw data to Parquet and push to an S3 bucket for analysis. We'll use bucket name `my-hfeolus-bucket` in region `eu-west-1`, and set the STAC collection ID to `sentinel1-owi`. Run:
 
+```
     bash scripts/ingest_sar.sh \
       --s3-uri s3://my-hfeolus-bucket/sentinel1_owi_jan2024/ \
       --profile default --region eu-west-1 \
       --athena-db eolus_data --athena-table sentinel1_owi_jan2024 \
       --collection sentinel1-owi \
       --data-dir /data/sar_raw --output-dir /data/sar_catalog
+```
 
 This will build Docker images and process the data. After completion, the Parquet files and STAC catalog are in `/data/sar_catalog` locally, and also uploaded to `s3://my-hfeolus-bucket/sentinel1_owi_jan2024/`. An Athena table `eolus_data.sentinel1_owi_jan2024` is created (if the DB `eolus_data` didn't exist, it's created). We can now query this table in Athena (each row corresponds to a wind observation from Sentinel-1). We can also open the STAC `collection.json` (on S3 or locally) to inspect metadata, or use a STAC Browser to visualize the spatial extent of items.
 
