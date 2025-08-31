@@ -210,18 +210,18 @@ This software is provided "as is", without warranty of any kind, express or impl
 
 ## References
 
-  [\[1\]]: https://github.com/GOFUVI/hf_eolus_sar_ingestion/blob/HEAD/docs/ingest_sar_pipeline.md
-  [\[2\]]: https://github.com/GOFUVI/hf_eolus_sar_ingestion/blob/HEAD/docs/download_sar_pipeline.md
-  [\[3\]]: https://github.com/GOFUVI/hf_eouls_geoparquet_stac_specs/blob/HEAD/geoparquet_specs.md
-  [\[4\]]: https://github.com/GOFUVI/hf_eouls_geoparquet_stac_specs/blob/HEAD/stac_specs.md
-  [\[5\]]: https://github.com/GOFUVI/hf_eolus_sar_ingestion/blob/HEAD/scripts/ingest_sar.sh
-  [\[6\]]: https://github.com/GOFUVI/hf_eouls_geoparquet_stac_specs/blob/HEAD/README.md
-  [\[7\]]: https://github.com/GOFUVI/hf_eolus_sar_ingestion/blob/HEAD/scripts/download_sar.sh
-  [\[8\]]: https://github.com/GOFUVI/hf_eolus_sar_ingestion/blob/HEAD/scripts/upload_SAR.R
+[\[1\]]: https://github.com/GOFUVI/hf_eolus_sar_ingestion/blob/HEAD/docs/ingest_sar_pipeline.md
+[\[2\]]: https://github.com/GOFUVI/hf_eolus_sar_ingestion/blob/HEAD/docs/download_sar_pipeline.md
+[\[3\]]: https://github.com/GOFUVI/hf_eouls_geoparquet_stac_specs/blob/HEAD/geoparquet_specs.md
+[\[4\]]: https://github.com/GOFUVI/hf_eouls_geoparquet_stac_specs/blob/HEAD/stac_specs.md
+[\[5\]]: https://github.com/GOFUVI/hf_eolus_sar_ingestion/blob/HEAD/scripts/ingest_sar.sh
+[\[6\]]: https://github.com/GOFUVI/hf_eouls_geoparquet_stac_specs/blob/HEAD/README.md
+[\[7\]]: https://github.com/GOFUVI/hf_eolus_sar_ingestion/blob/HEAD/scripts/download_sar.sh
+[\[8\]]: https://github.com/GOFUVI/hf_eolus_sar_ingestion/blob/HEAD/scripts/upload_SAR.R
 
-  [`docs/`]: docs/
-  [**Download Pipeline guide**]: docs/download_sar_pipeline.md
-  [**Ingestion Pipeline guide**]: docs/ingest_sar_pipeline.md
+[`docs/`]: docs/
+[**Download Pipeline guide**]: docs/download_sar_pipeline.md
+[**Ingestion Pipeline guide**]: docs/ingest_sar_pipeline.md
 
 ---
 <p align="center">
