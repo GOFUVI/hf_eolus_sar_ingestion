@@ -21,7 +21,7 @@ Bash orchestrator that:
 Dockerfile that derives from `rocker/geospatial`, installs Python dependencies and AWS CLI in a virtual environment, installs required R packages (including `S1OCN`), copies `upload_SAR.R`, and sets it as the container entrypoint.
 
 ### `scripts/upload_SAR.R`
-R script executed inside the upload container. It reads ZIP files from `downloads/`, extracts wind data using the `S1OCN` package, adds date partition columns, writes a partitioned GeoParquet dataset under `parquet_output/`, and exports a `columns.sql` file describing Athena column types.
+R script executed inside the upload container. It reads ZIP files from `downloads/`, extracts wind data using the `S1OCN` package, adds a date partition column, writes a partitioned GeoParquet dataset under `parquet_output/`, and exports a `columns.sql` file describing Athena column types.
 
 ### `scripts/Dockerfile.catalog`
 Lightweight Python image that installs `pyarrow`, `shapely`, and `pystac[validation]`. It copies `build_sar_catalog.py` and `parquet_stac_utils.py` and uses the former as the entrypoint.
@@ -63,7 +63,7 @@ bash scripts/ingest_sar.sh \
 
 ## Outputs
 After successful execution the output directory contains:
-- `assets/`: GeoParquet files partitioned by `year/month/day`.
+- `assets/`: GeoParquet files partitioned by `date` (`YYYY-MM-DD`).
 - `items/`: STAC item JSON files linking to each Parquet asset.
 - `collection.json`: STAC collection metadata.
 The script also creates Athena DDL files under `scripts/` and logs in `scripts/logs/`.

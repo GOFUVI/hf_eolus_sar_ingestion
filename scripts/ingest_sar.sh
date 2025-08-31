@@ -254,8 +254,8 @@ schema_file_path="${output_dir}/assets/columns.sql"
 if [[ -f "${schema_file_path}" ]]; then
   # Read base columns
   columns_sql=$(< "${schema_file_path}")
-  # Remove partition columns (year, month, day)
-  columns_sql=$(echo "${columns_sql}" | sed -E 's/(^|, *)year [^,]+//g; s/(^|, *)month [^,]+//g; s/(^|, *)day [^,]+//g; s/^, *//; s/, *$//')
+  # Remove partition column (date)
+  columns_sql=$(echo "${columns_sql}" | sed -E 's/(^|, *)date [^,]+//g; s/^, *//; s/, *$//')
   # Format for pretty-printing in DDL
   # shellcheck disable=SC2001
   formatted_cols=$(echo "${columns_sql}" | sed 's/, */,\n  /g')
@@ -279,9 +279,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS ${athena_db}.${athena_table} (
   ${formatted_cols}
 )
 PARTITIONED BY (
-  year  STRING,
-  month STRING,
-  day   STRING
+  date STRING
 )
 ROW FORMAT SERDE
   'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe'

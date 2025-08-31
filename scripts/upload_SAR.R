@@ -77,15 +77,10 @@ wind_data <- wind_data %>%
 log_info("wind_data rows: %d, columns: %d", nrow(wind_data), ncol(wind_data))
 log_debug("Columns: %s", paste(names(wind_data), collapse = ", "))
 
-# Add date partitioning columns
-log_info("Adding date partition columns (year/month/day) from firstMeasurementTime...")
+# Add date partitioning column formatted as YYYY-MM-DD
+log_info("Adding date partition column from firstMeasurementTime...")
 wind_data <- wind_data %>%
-  mutate(
-    date = as.Date(firstMeasurementTime),
-    year = format(date, "%Y"),
-    month = format(date, "%m"),
-    day = format(date, "%d")
-  )
+  mutate(date = format(as.Date(firstMeasurementTime), "%Y-%m-%d"))
 
 # Write GeoParquet dataset partitioned by date using Python via reticulate
 output_dir <- "parquet_output"
@@ -191,15 +186,13 @@ schema_with_geo <- tryCatch({
   reticulate::py$`_schema_with_meta`(tbl$schema, md_min)
 })
 log_debug("schema_with_geo class: %s", paste(class(schema_with_geo), collapse = ", "))
-log_info("Preparing partitioning (hive) for columns year/month/day...")
+log_info("Preparing partitioning (hive) for column date...")
 part_schema <- pa$schema(list(
-  pa$field("year", pa$string()),
-  pa$field("month", pa$string()),
-  pa$field("day", pa$string())
+  pa$field("date", pa$string())
 ))
 part <- ds$partitioning(part_schema, flavor = "hive")
 
-log_info("Writing GeoParquet dataset to '%s' (partitioned by year/month/day)...", output_dir)
+log_info("Writing GeoParquet dataset to '%s' (partitioned by date)...", output_dir)
 ds$write_dataset(
   tbl,
   base_dir = output_dir,
@@ -215,12 +208,12 @@ try({
   if (length(files_written) > 0) log_debug("Sample file: %s", basename(files_written[[1]]))
   for (f in files_written) {
     rel <- substring(f, nchar(output_dir) + 2)
-    m <- str_match(rel, "year=([0-9]{4})/month=([0-9]{2})/day=([0-9]{2})/[^/]+\\.parquet$")
+    m <- str_match(rel, "date=([0-9]{4}-[0-9]{2}-[0-9]{2})/[^/]+\\.parquet$")
     if (any(is.na(m))) {
       log_warn("Skipping unrecognized Parquet path: %s", rel)
       next
     }
-    new_path <- file.path(dirname(f), sprintf("%s%s%s.parquet", m[2], m[3], m[4]))
+    new_path <- file.path(dirname(f), sprintf("%s.parquet", m[2]))
     if (!file.rename(f, new_path)) {
       log_warn("Failed to rename %s to %s", rel, basename(new_path))
     } else {
