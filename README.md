@@ -51,6 +51,7 @@ The typical workflow involves two steps: **(1) Downloading** the raw Sentinel-1 
 ### 1. Downloading Sentinel-1 SAR Data
 
 Use the `scripts/download_sar.sh` script to fetch Sentinel-1 SAR OCN products (OWI files) within a date range and geographic boundary. At minimum you must specify the start date, end date, and a boundary GeoJSON file. The script will prompt an error if required arguments are missing. Example usage:
+
 ```
     bash scripts/download_sar.sh \
       --start-date 2024-01-01 --end-date 2024-01-03 \
