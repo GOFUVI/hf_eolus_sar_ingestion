@@ -14,7 +14,7 @@ ENV PATH=/opt/awscli-venv/bin:$PATH
 ENV RETICULATE_PYTHON=/opt/awscli-venv/bin/python
 
 # Install required R packages, including S1OCN
-RUN Rscript -e "install.packages(c('magrittr','purrr','dplyr','stringr','sf','arrow','remotes','reticulate'), repos='https://cloud.r-project.org')" \
+RUN Rscript -e "install.packages(c('magrittr','purrr','dplyr','stringr','sf','arrow','remotes','reticulate','digest','bit64'), repos='https://cloud.r-project.org')" \
     && Rscript -e "remotes::install_github('GOFUVI/S1OCN')"
 
 WORKDIR /app

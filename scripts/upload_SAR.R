@@ -18,6 +18,8 @@ if (requireNamespace("future", quietly = TRUE)) {
 library(arrow)
 library(dplyr)
 library(stringr)
+library(digest)
+library(bit64)
 # Ensure S1OCN package is available (installed via Dockerfile.upload build)
 if (!requireNamespace("S1OCN", quietly = TRUE)) {
   stop(
@@ -110,6 +112,41 @@ write_lineage_map <- function(wind_df, output_dir, zip_files = NULL) {
   invisible(NULL)
 }
 
+ #' Compute deterministic row identifiers
+ #' 
+ #' @description Generate a stable 64-bit identifier for each observation using a
+ #'   fast hash of time, longitude, latitude and wind speed.
+ #' 
+ #' @param firstMeasurementTime POSIXct vector of measurement times.
+ #' @param lon Numeric vector of longitudes (degrees).
+ #' @param lat Numeric vector of latitudes (degrees).
+ #' @param owiWindSpeed Numeric vector of wind speeds (m/s).
+ #' 
+ #' @details Optimized for speed by avoiding per-row serialization of geometry
+ #'   objects. Builds a canonical string key per row using: UNIX time in seconds
+ #'   (UTC), full-precision longitude, latitude, and wind speed formatted with 17
+ #'   significant digits to preserve double precision. Each key is hashed with
+ #'   `xxhash64` via the `digest` package using `serialize = FALSE`.
+ #' 
+ #' @return A character vector of 16-character lowercase hex strings representing
+ #'   the 64-bit hash. These will be converted to signed int64 in the Python
+ #'   writer to be stored as BIGINT in Parquet/Athena.
+ compute_rowid <- function(firstMeasurementTime, lon, lat, owiWindSpeed) {
+   n <- length(firstMeasurementTime)
+   stopifnot(n == length(lon), n == length(lat), n == length(owiWindSpeed))
+ 
+   # Canonical string representation (vectorized)
+   ts  <- as.integer(as.POSIXct(firstMeasurementTime, tz = "UTC"))
+   lon_s <- sprintf("%.17g", lon)
+   lat_s <- sprintf("%.17g", lat)
+   spd_s <- sprintf("%.17g", owiWindSpeed)
+   keys <- paste(ts, lon_s, lat_s, spd_s, sep = "|")
+ 
+   # Fast non-serializing hashing; returns hex string per key
+   vapply(keys, digest::digest, FUN.VALUE = character(1),
+          algo = "xxhash64", serialize = FALSE)
+ }
+
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 0) {
   stop("Usage: Rscript upload_SAR.R", call. = FALSE)
@@ -158,6 +195,10 @@ if (length(lon_col) == 1 && length(lat_col) == 1) {
 geom_sfc <- sf::st_geometry(wind_data)
 # Convert geometry to WKB binary and store WKT for text-based exports
 wind_data$geometry <- sf::st_as_binary(geom_sfc)
+# Compute deterministic rowid values (hex strings) using time + lon/lat + wind speed
+wind_data <- wind_data %>%
+  mutate(rowid = compute_rowid(firstMeasurementTime, .data[[lon_col]], .data[[lat_col]], owiWindSpeed))
+log_info("Computed deterministic rowid values for %d rows", nrow(wind_data))
 # Compute bounding box for GeoParquet metadata
 bbox <- sf::st_bbox(geom_sfc)
 log_info("Computed bbox: minx=%.6f, miny=%.6f, maxx=%.6f, maxy=%.6f", bbox[[1]], bbox[[2]], bbox[[3]], bbox[[4]])
@@ -170,7 +211,31 @@ json <- import("json", convert = FALSE)
 
 # Convert the R sf object to a pandas DataFrame for PyArrow
 df_py <- r_to_py(wind_data)
+# Convert 'rowid' from hex string to signed int64 in pandas (robust membership check)
+try({
+  reticulate::py_run_string("\nimport numpy as np\n\nMASK63 = (1 << 63) - 1\n\n\ndef _hexseries_to_int64_pos(s):\n    vals = s.astype(str)\n    def conv(x):\n        if x is None:\n            return np.int64(0)\n        x = x.strip()\n        if not x:\n            return np.int64(0)\n        if x.startswith('0x') or x.startswith('0X'):\n            x = x[2:]\n        iv_u = int(x, 16)\n        iv = iv_u & MASK63\n        return np.int64(iv)\n    return vals.map(conv)\n")
+  cols <- try(py_to_r(df_py$columns$tolist()), silent = TRUE)
+  if (!inherits(cols, "try-error") && "rowid" %in% cols) {
+    df_py$`__setitem__`("rowid", reticulate::py$`_hexseries_to_int64_pos`(df_py$`__getitem__`("rowid")))
+    # Ensure plain int64 dtype
+    df_py$`__setitem__`("rowid", df_py$`__getitem__`("rowid")$astype("int64"))
+    dtype_name <- try(py_to_r(df_py$`__getitem__`("rowid")$dtype$name), silent = TRUE)
+    try({ log_info("pandas dtype for 'rowid' after conversion: %s", as.character(dtype_name)) }, silent = TRUE)
+  } else {
+    log_warn("'rowid' column not found in pandas DataFrame; it may be missing or renamed")
+  }
+}, silent = TRUE)
 tbl <- pa$Table$from_pandas(df_py, preserve_index = FALSE)
+# Force-cast 'rowid' field to int64 at Arrow level as a final safeguard
+try({
+  reticulate::py_run_string("\nimport pyarrow as pa\nimport pyarrow.compute as pc\n\ndef _ensure_rowid_int64(tbl):\n    try:\n        i = tbl.schema.get_field_index('rowid')\n    except Exception:\n        return tbl\n    if i == -1:\n        return tbl\n    typ = tbl.schema.field(i).type\n    if pa.types.is_int64(typ):\n        return tbl\n    arr = pc.cast(tbl.column(i), pa.int64())\n    field = tbl.schema.field(i).with_type(pa.int64())\n    return tbl.set_column(i, field, arr)\n")
+  tbl <- reticulate::py$`_ensure_rowid_int64`(tbl)
+  # Log Arrow dtype of 'rowid'
+  try({
+    t_str <- reticulate::py_eval("str(tbl.schema.field_by_name('rowid').type)", convert = TRUE)
+    log_info("Arrow type for 'rowid': %s", as.character(t_str))
+  }, silent = TRUE)
+}, silent = TRUE)
 log_info("PyArrow table schema fields: %s", paste(py_to_r(tbl$schema$names), collapse = ", "))
 
 log_info("Building CRS84 + GeoParquet metadata objects...")
@@ -280,6 +345,7 @@ col_classes <- sapply(wind_data, function(x) class(x)[1])
 athena_types <- vapply(col_classes, function(cl) {
   switch(cl,
          integer   = "INT",
+         integer64 = "BIGINT",
          numeric   = "DOUBLE",
          character = "STRING",
          POSIXct   = "TIMESTAMP",
@@ -290,6 +356,8 @@ athena_types <- vapply(col_classes, function(cl) {
          WKB       = "BINARY",
          stop(sprintf("Unsupported R class for Athena type mapping: %s", cl)))
 }, character(1))
+# Guarantee BIGINT for rowid regardless of R-side class (converted in pandas)
+if ("rowid" %in% names(athena_types)) athena_types[["rowid"]] <- "BIGINT"
 col_defs <- paste(sprintf("%s %s", names(athena_types), athena_types), collapse = ", ")
 schema_file <- file.path(output_dir, "columns.sql")
 writeLines(col_defs, schema_file)

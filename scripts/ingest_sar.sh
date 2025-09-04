@@ -272,6 +272,10 @@ schema_file_path="${output_dir}/assets/columns.sql"
 if [[ -f "${schema_file_path}" ]]; then
   # Read base columns
   columns_sql=$(< "${schema_file_path}")
+  if ! grep -qE '(^|, *)rowid [A-Za-z]+' <<<"${columns_sql}"; then
+    log_err "Required rowid column missing from ${schema_file_path}"
+    exit 1
+  fi
   # Remove partition column (date)
   columns_sql=$(echo "${columns_sql}" | sed -E 's/(^|, *)date [^,]+//g; s/^, *//; s/, *$//')
   # Format for pretty-printing in DDL
@@ -285,8 +289,8 @@ else
 fi
 
 # Upload catalog to S3 after removing temporary files
-log_info "Uploading catalog to ${s3_uri}"
-upload_cmd=(aws s3 cp --recursive "${output_dir}" "${s3_uri}" --profile "${profile}")
+log_info "Synchronizing catalog to ${s3_uri} (removing stale files)"
+upload_cmd=(aws s3 sync "${output_dir}" "${s3_uri}" --delete --profile "${profile}")
 if [[ -n "${region}" ]]; then
   upload_cmd+=(--region "${region}")
 fi
