@@ -220,7 +220,7 @@ def build_catalog(root: Path, collection_id: str, item_props_path: str | None, c
 
     collection = pystac.Collection(
         id=collection_id,
-        description="Synthetic Aperture Radar wind vectors for HF-EOLUS Project area of interest (NW Iberian Peninsula and S Bay of Biscay) derived from Copernicus Sentinel-1 Level-2 OCN OWI products, processed into a GeoParquet dataset. The dataset contains wind speed, direction, and quality flag at approximately 10 m above sea level, along with satellite metadata. Data is provided in daily files covering the period from November 2020 to February 2023. Each file contains point geometries in WGS84 (EPSG:4326) with associated attributes.",
+        description="Synthetic Aperture Radar wind vectors.",
         extent=pystac.Extent(spatial_extent, temporal_extent),
         extra_fields=collection_props,
     )
