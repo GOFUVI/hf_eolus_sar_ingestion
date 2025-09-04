@@ -218,10 +218,13 @@ def build_catalog(root: Path, collection_id: str, item_props_path: str | None, c
     spatial_extent = pystac.SpatialExtent([overall_bbox])
     temporal_extent = pystac.TemporalExtent([[min(start_times), max(end_times)]])
 
+    # Honor license from collection properties; default to GPL-3.0 if missing
+    coll_license = collection_props.pop("license", "GPL-3.0")
     collection = pystac.Collection(
         id=collection_id,
         description="Synthetic Aperture Radar wind vectors.",
         extent=pystac.Extent(spatial_extent, temporal_extent),
+        license=coll_license,
         extra_fields=collection_props,
     )
     TableExtension.add_to(collection)
